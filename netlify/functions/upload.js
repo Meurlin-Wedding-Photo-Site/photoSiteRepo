@@ -1,6 +1,7 @@
+// netlify/functions/upload.js
 const { Readable } = require("stream");
-const cloudinary = require("cloudinary").v2;
 const multiparty = require("multiparty");
+const cloudinary = require("cloudinary").v2;
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -13,13 +14,13 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: "method not allowed" };
   }
 
-  // must be multipart/form-data (formdata from the browser)
-  const contentType = event.headers["content-type"] || event.headers["Content-Type"] || "";
+  const contentType =
+    event.headers["content-type"] || event.headers["Content-Type"] || "";
   if (!/^multipart\/form-data/i.test(contentType)) {
     return { statusCode: 400, body: "content-type must be multipart/form-data" };
   }
 
-  // turn the lambda event body into a request-like stream for multiparty
+  // turn the lambda event body into a stream multiparty can read
   const bodyBuffer = event.isBase64Encoded
     ? Buffer.from(event.body || "", "base64")
     : Buffer.from(event.body || "");
@@ -30,43 +31,66 @@ exports.handler = async (event) => {
   req.push(bodyBuffer);
   req.push(null);
 
-  return await new Promise((resolve) => {
-    const form = new multiparty.Form({ maxFilesSize: 15 * 1024 * 1024 }); // 15mb
+  const MAX_SIZE = 15 * 1024 * 1024; // 15mb
+  const MAX_FILES = 20;
 
-    form.parse(req, async (err, fields, files) => {
-      if (err) {
-        console.error(err);
-        return resolve({ statusCode: 400, body: "bad form data" });
-      }
+  try {
+    const result = await new Promise((resolve) => {
+      const form = new multiparty.Form({ maxFilesSize: MAX_SIZE });
 
-      const name = fields?.name?.[0] || "";
-      const caption = fields?.caption?.[0] || "";
-
-      const folder  = process.env.CLOUDINARY_FOLDER || "wedding";
-      const baseTag = process.env.CLOUDINARY_TAG    || "wedding_photo";
-
-      try {
-        const items = (files?.photos || []).slice(0, 20);
-        let count = 0;
-
-        for (const f of items) {
-          const ct = f.headers?.["content-type"] || "";
-          if (!/^image\//i.test(ct)) continue;
-          if (f.size > 15 * 1024 * 1024) continue;
-
-          await cloudinary.uploader.upload(f.path, {
-            folder,
-            tags: [baseTag],
-            context: { name, caption },
-          });
-          count++;
+      form.parse(req, async (err, fields, files) => {
+        if (err) {
+          console.error(err);
+          return resolve({ ok: false, error: "bad form data" });
         }
 
-        resolve({ statusCode: 200, body: JSON.stringify({ count }) });
-      } catch (e) {
-        console.error(e);
-        resolve({ statusCode: 500, body: "upload error" });
-      }
+        const name = fields?.name?.[0] || "";
+        const caption = fields?.caption?.[0] || "";
+
+        const folder  = process.env.CLOUDINARY_FOLDER || "wedding";
+        const baseTag = process.env.CLOUDINARY_TAG    || "wedding_photo";
+
+        try {
+          const items = (files?.photos || []).slice(0, MAX_FILES);
+          const seen = new Set(); // dedupe within one request
+          let count = 0;
+
+          for (const f of items) {
+            const ct = f.headers?.["content-type"] || "";
+            if (!/^image\//i.test(ct)) continue;
+            if (f.size > MAX_SIZE) continue;
+
+            const key = `${f.originalFilename}|${f.size}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            await cloudinary.uploader.upload(f.path, {
+              folder,
+              tags: [baseTag],
+              context: { name, caption },
+            });
+            count++;
+          }
+
+          resolve({ ok: true, count });
+        } catch (e) {
+          console.error(e);
+          resolve({ ok: false, error: "upload error" });
+        }
+      });
     });
-  });
+
+    if (!result.ok) {
+      return { statusCode: 400, body: result.error };
+    }
+
+    return {
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ count: result.count }),
+    };
+  } catch (e) {
+    console.error(e);
+    return { statusCode: 500, body: "server error" };
+  }
 };

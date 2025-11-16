@@ -1,0 +1,25 @@
+{
+  "name": "photositerepo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "netlify dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Meurlin-Wedding-Photo-Site/photoSiteRepo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Meurlin-Wedding-Photo-Site/photoSiteRepo/issues"
+  },
+  "homepage": "https://github.com/Meurlin-Wedding-Photo-Site/photoSiteRepo#readme",
+  "dependencies": {
+    "cloudinary": "^2.8.0",
+    "multiparty": "^4.2.3"
+  }
+}

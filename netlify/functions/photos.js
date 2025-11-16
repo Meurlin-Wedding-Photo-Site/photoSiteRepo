@@ -1,3 +1,4 @@
+// netlify/functions/photos.js
 const cloudinary = require("cloudinary").v2;
 
 cloudinary.config({
@@ -9,8 +10,9 @@ cloudinary.config({
 exports.handler = async () => {
   try {
     const baseTag = process.env.CLOUDINARY_TAG || "wedding_photo";
+
     const r = await cloudinary.search
-      .expression(`tags=${baseTag}`)
+      .expression(`tags=${baseTag}`)        // show ALL uploads (no moderation)
       .sort_by("created_at", "desc")
       .max_results(1000)
       .execute();

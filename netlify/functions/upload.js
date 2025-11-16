@@ -20,7 +20,7 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: "content-type must be multipart/form-data" };
   }
 
-  // turn the lambda event body into a stream multiparty can read
+  // convert lambda body → stream for multiparty
   const bodyBuffer = event.isBase64Encoded
     ? Buffer.from(event.body || "", "base64")
     : Buffer.from(event.body || "");
@@ -41,18 +41,24 @@ exports.handler = async (event) => {
       form.parse(req, async (err, fields, files) => {
         if (err) {
           console.error(err);
-          return resolve({ ok: false, error: "bad form data" });
+          return resolve({ ok: false, code: 400, body: "bad form data" });
+        }
+
+        // invite-code gate
+        const required = process.env.INVITE_CODE || "";
+        const supplied = (fields?.code?.[0] || "").trim();
+        if (required && supplied !== required) {
+          return resolve({ ok: false, code: 403, body: "bad code" });
         }
 
         const name = fields?.name?.[0] || "";
         const caption = fields?.caption?.[0] || "";
-
         const folder  = process.env.CLOUDINARY_FOLDER || "wedding";
         const baseTag = process.env.CLOUDINARY_TAG    || "wedding_photo";
 
         try {
           const items = (files?.photos || []).slice(0, MAX_FILES);
-          const seen = new Set(); // dedupe within one request
+          const seen = new Set(); // dedupe within request
           let count = 0;
 
           for (const f of items) {
@@ -66,28 +72,24 @@ exports.handler = async (event) => {
 
             await cloudinary.uploader.upload(f.path, {
               folder,
-              tags: [baseTag],
+              tags: [baseTag],           // no moderation: one tag only
               context: { name, caption },
             });
             count++;
           }
 
-          resolve({ ok: true, count });
+          resolve({ ok: true, code: 200, body: JSON.stringify({ count }) });
         } catch (e) {
           console.error(e);
-          resolve({ ok: false, error: "upload error" });
+          resolve({ ok: false, code: 500, body: "upload error" });
         }
       });
     });
 
-    if (!result.ok) {
-      return { statusCode: 400, body: result.error };
-    }
-
     return {
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ count: result.count }),
+      statusCode: result.code,
+      headers: result.ok ? { "content-type": "application/json" } : undefined,
+      body: result.body,
     };
   } catch (e) {
     console.error(e);

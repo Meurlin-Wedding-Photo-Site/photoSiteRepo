@@ -5,16 +5,19 @@ let busy = false;
 
 form?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (busy) return; // block double clicks / enter spam
+  if (busy) return;
   busy = true;
 
   statusEl.textContent = "uploading…";
 
-  // IMPORTANT: this already includes the <input name="photos" multiple>
-  const fd = new FormData(form);
+  const fd = new FormData(form); // includes code, name, caption, files
 
   try {
     const res = await fetch("/api/upload", { method: "POST", body: fd });
+    if (res.status === 403) {
+      statusEl.textContent = "wrong invite code.";
+      return;
+    }
     if (!res.ok) throw new Error("upload failed");
     const { count = 0 } = await res.json();
     statusEl.textContent = `thanks! uploaded ${count} photo${count === 1 ? "" : "s"}.`;
